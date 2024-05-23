@@ -56,6 +56,55 @@ where
     }
 }
 
+trait Prng {
+    fn fill(&self, dest: &mut [u8]);
+}
+
+impl<T> Prng for T
+where
+    T: sealed::Prng,
+{
+    #[inline]
+    fn fill(&self, dest: &mut [u8]) {
+        self.fill_impl(dest)
+    }
+}
+
+const SYSTEM_PRNG: SystemPrng = SystemPrng(());
+
+/// A secure random number generator where the random values come from the
+/// underlying *AWS-LC* libcrypto.
+///
+/// A single `SystemPrng` may be shared across multiple threads safely.
+//
+// # FIPS
+// Use this implementation for retrieving random bytes.
+#[derive(Clone, Debug)]
+pub struct SystemPrng(());
+
+impl SystemPrng {
+    /// Constructs a new `SystemPrng`.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for SystemPrng {
+    fn default() -> Self {
+        SYSTEM_PRNG
+    }
+}
+
+impl sealed::Prng for SystemPrng {
+    #[inline]
+    fn fill_impl(&self, dest: &mut [u8]) {
+        // https://github.com/aws/aws-lc/blob/fc06ecbf83914c538c771d0f0969cc6afe0ee4bf/crypto/fipsmodule/rand/rand.c#L547
+        fill(dest).expect("The underlying RAND_bytes impl should never fail")
+    }
+}
+
 /// A random value constructed from a `SecureRandom` that hasn't been exposed
 /// through any safe Rust interface.
 ///
@@ -89,6 +138,11 @@ pub(crate) mod sealed {
     pub trait SecureRandom: core::fmt::Debug {
         /// Fills `dest` with random bytes.
         fn fill_impl(&self, dest: &mut [u8]) -> Result<(), error::Unspecified>;
+    }
+
+    pub trait Prng: core::fmt::Debug {
+        /// Fills `dest` with random bytes.
+        fn fill_impl(&self, dest: &mut [u8]);
     }
 
     pub trait RandomlyConstructable: Sized {
